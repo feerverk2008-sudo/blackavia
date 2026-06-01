@@ -8,11 +8,9 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// ------------------------- НАСТРОЙКИ NOWPAYMENTS -------------------------
-const NOWPAYMENTS_API_KEY = '5D3VJ3Z-KCM4QPP-J9P19CQ-2HA8GBC'; // Твой ключ
+const NOWPAYMENTS_API_KEY = '5D3VJ3Z-KCM4QPP-J9P19CQ-2HA8GBC';
 const NOWPAYMENTS_API_URL = 'https://api.nowpayments.io/v1';
 
-// ------------------------- БАЗА ДАННЫХ SQLITE -------------------------
 const db = new sqlite3.Database('blackvail.db');
 db.serialize(() => {
   db.run(`CREATE TABLE IF NOT EXISTS users (
@@ -35,7 +33,6 @@ db.serialize(() => {
   )`);
 });
 
-// ------------------------- ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ -------------------------
 function getPlayerByTelegram(telegram, cb) {
   db.get(`SELECT * FROM users WHERE telegram = ?`, [telegram], cb);
 }
@@ -48,14 +45,13 @@ function updateBalance(player_id, newBalance, cb) {
 function createPlayer(telegram, password, cb) {
   let username = telegram.replace('@', '');
   let player_id = crypto.randomBytes(3).toString('hex').toUpperCase();
-  db.run(`INSERT INTO users (player_id, telegram, username, password, balance) VALUES (?, ?, ?, ?, 0)`,
+  db.run(`INSERT INTO users (player_id, telegram, username, password, balance) VALUES (?, ?, ?, ?, 1000)`,
     [player_id, telegram, username, password], function(err) {
       if (err) return cb(err);
-      cb(null, { player_id, username, balance: 0 });
+      cb(null, { player_id, username, balance: 1000 });
     });
 }
 
-// ------------------------- API ДЛЯ КЛИЕНТА -------------------------
 app.post('/api/login', (req, res) => {
   const { telegram, password } = req.body;
   getPlayerByTelegram(telegram, (err, user) => {
@@ -79,7 +75,48 @@ app.get('/api/balance/:player_id', (req, res) => {
   });
 });
 
-// СОЗДАНИЕ ПЛАТЕЖА (500 грн)
+app.post('/api/place_bet', (req, res) => {
+  const { player_id, bet, game } = req.body;
+  if (!player_id || !bet) return res.json({ error: 'Не хватает данных' });
+  getPlayerById(player_id, (err, user) => {
+    if (err || !user) return res.json({ error: 'Пользователь не найден' });
+    if (user.balance < bet) return res.json({ error: 'Недостаточно средств' });
+    const newBalance = user.balance - bet;
+    updateBalance(player_id, newBalance, (err2) => {
+      if (err2) return res.json({ error: 'Ошибка БД' });
+      res.json({ success: true, new_balance: newBalance });
+    });
+  });
+});
+
+app.post('/api/cashout_crash', (req, res) => {
+  const { player_id, win, multiplier } = req.body;
+  if (!player_id || !win) return res.json({ error: 'Нет данных' });
+  getPlayerById(player_id, (err, user) => {
+    if (err || !user) return res.json({ error: 'Пользователь не найден' });
+    const newBalance = user.balance + win;
+    db.run(`UPDATE users SET balance = ?, total_won = total_won + ? WHERE player_id = ?`,
+      [newBalance, win, player_id], (err2) => {
+        if (err2) return res.json({ error: 'Ошибка БД' });
+        res.json({ success: true, new_balance: newBalance });
+      });
+  });
+});
+
+app.post('/api/cashout_slot', (req, res) => {
+  const { player_id, win } = req.body;
+  if (!player_id || !win) return res.json({ error: 'Нет данных' });
+  getPlayerById(player_id, (err, user) => {
+    if (err || !user) return res.json({ error: 'Пользователь не найден' });
+    const newBalance = user.balance + win;
+    db.run(`UPDATE users SET balance = ?, total_won = total_won + ? WHERE player_id = ?`,
+      [newBalance, win, player_id], (err2) => {
+        if (err2) return res.json({ error: 'Ошибка БД' });
+        res.json({ success: true, new_balance: newBalance });
+      });
+  });
+});
+
 app.post('/api/create-payment', (req, res) => {
   const { player_id } = req.body;
   if (!player_id) return res.json({ error: 'Нет ID игрока' });
@@ -101,7 +138,6 @@ app.post('/api/create-payment', (req, res) => {
   });
 });
 
-// ВЕБХУК ОТ NOWPAYMENTS (автоматическое зачисление)
 app.post('/api/nowpayments-webhook', (req, res) => {
   const { payment_id, order_id, payment_status, actually_paid } = req.body;
   if (payment_status === 'finished') {
@@ -123,10 +159,9 @@ app.post('/api/nowpayments-webhook', (req, res) => {
   } else res.sendStatus(200);
 });
 
-// АДМИН-ПАНЕЛЬ (упрощённая, для просмотра и изменения баланса)
 app.get('/admin', (req, res) => {
   db.all(`SELECT player_id, username, telegram, balance, total_won, total_lost FROM users`, [], (err, rows) => {
-    let html = `<html><head><meta charset="UTF-8"><title>Black VAIL Admin</title><style>body{background:#3d0000;color:#ffddcc;font-family:monospace;padding:20px;}table{border-collapse:collapse;width:100%;background:#2a0000;}th,td{border:1px solid #ff8844;padding:8px;}</style></head><body><h1>Admin BLACK VAIL</h1><form method="post" action="/admin/update"><input name="player_id" placeholder="Player ID"><input name="new_balance" placeholder="New Balance"><button>Изменить баланс</button></form><table border="1"><tr><th>Player ID</th><th>Username</th><th>Telegram</th><th>Balance</th><th>Won</th><th>Lost</th></tr>`;
+    let html = `<html><head><meta charset="UTF-8"><title>Black VAIL Admin</title><style>body{background:#3d0000;color:#ffddcc;font-family:monospace;padding:20px;}table{border-collapse:collapse;width:100%;background:#2a0000;}th,td{border:1px solid #ff8844;padding:8px;}</style></head><body><h1>Admin BLACK VAIL</h1><form method="post" action="/admin/update"><input name="player_id" placeholder="Player ID"><input name="new_balance" placeholder="New Balance"><button>Изменить баланс</button></form><table><tr><th>Player ID</th><th>Username</th><th>Telegram</th><th>Balance</th><th>Won</th><th>Lost</th></tr>`;
     rows.forEach(r => {
       html += `<tr><td>${r.player_id}</td><td>${r.username}</td><td>${r.telegram}</td><td>${r.balance}</td><td>${r.total_won}</td><td>${r.total_lost}</td></tr>`;
     });
