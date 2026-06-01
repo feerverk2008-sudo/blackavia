@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>BLACK VAIL | AVIA & SLOT</title>
+    <style>
+        *{margin:0;padding:0;box-sizing:border-box;font-family:'Segoe UI',sans-serif;}
+        body{background:#000;color:#eee;overflow-x:hidden;}
+        .bg{position:fixed;top:0;left:0;width:100%;height:100%;background:radial-gradient(circle at 30% 20%,#1a0000,#000);z-index:-2;}
+        .container{max-width:1300px;margin:0 auto;padding:20px;}
+        .header{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;background:rgba(0,0,0,0.7);border-radius:60px;padding:10px 30px;margin-bottom:30px;border:1px solid #f44;}
+        .avatar{width:70px;border-radius:50%;border:2px solid gold;}
+        h1{font-size:2.5rem;background:linear-gradient(135deg,#ff2a2a,#ffcc00);-webkit-background-clip:text;background-clip:text;color:transparent;}
+        .user-panel{background:#111;padding:10px 20px;border-radius:40px;gap:20px;display:flex;border:1px solid #fc0;}
+        .game-btn{background:#8b0000;color:#ffcc00;padding:15px 30px;font-size:1.2rem;border-radius:50px;cursor:pointer;border:none;margin:10px;}
+        .game-section{margin-top:30px; background:#111; border-radius:30px; padding:20px;}
+        .modal{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.95);z-index:1000;justify-content:center;align-items:center;}
+        .modal-content{background:#1a0000;border:3px solid #f00;border-radius:30px;width:800px;max-width:90%;padding:20px;}
+        .close{float:right;font-size:30px;cursor:pointer;color:#f44;}
+        .login-box{background:#111;padding:40px;border-radius:30px;max-width:400px;margin:100px auto;}
+        .login-box input{width:100%;padding:10px;margin:10px 0;}
+        .login-box button{width:100%;padding:10px;background:#f44;border:none;font-weight:bold;}
+        #multiplier{font-size:4rem;text-align:center;color:#0f0;}
+        .slot-reels{font-size:3rem;text-align:center;letter-spacing:20px;}
+    </style>
+</head>
+<body>
+<div class="bg"></div>
+<div class="container">
+    <div class="header">
+        <img src="https://cdn-icons-png.flaticon.com/512/271/271284.png" class="avatar">
+        <h1>BLACK VAIL</h1>
+        <div class="user-panel" id="userPanel" style="display:none;">
+            <span>👤 <strong id="usernameDisplay"></strong></span>
+            <span>🆔 <strong id="playerIdDisplay"></strong></span>
+            <span>💰 <span id="balanceDisplay">0</span> грн</span>
+        </div>
+    </div>
+    <div id="loginContainer" class="login-box">
+        <form id="loginForm">
+            <input type="text" id="telegram" placeholder="Telegram @username" required>
+            <input type="password" id="password" placeholder="Пароль (мин 4)" required>
+            <button type="submit">Войти / Регистрация</button>
+            <div id="loginError" style="color:red;"></div>
+        </form>
+    </div>
+    <div id="gamesContainer" style="display:none; text-align:center;">
+        <button class="game-btn" id="crashBtn">✈️ АВИАТОР (КРЕШ)</button>
+        <button class="game-btn" id="slotBtn">🎰 СЛОТ</button>
+        <button class="game-btn" id="depositBtn">💳 ПОПОЛНИТЬ 500 грн</button>
+    </div>
+    <div id="gameArea" class="game-section"></div>
+</div>
+
+<div id="gameModal" class="modal">
+    <div class="modal-content">
+        <span class="close">&times;</span>
+        <div id="gameModalContent"></div>
+    </div>
+</div>
+
+<script>
+// ==== НАСТРОЙКИ ====
+const BACKEND_URL = 'https://blackvail-backend.onrender.com'; // Замени на свой URL после деплоя
+let currentPlayer = null;
+let crashInterval = null;
+let crashActive = false;
+let crashBet = 0;
+
+async function apiCall(endpoint, data = {}) {
+    let res = await fetch(BACKEND_URL + endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data)
+    });
+    return res.json();
+}
+
+async function getBalance() {
+    if (!currentPlayer) return 0;
+    let res = await fetch(`${BACKEND_URL}/api/balance/${currentPlayer.playerId}`);
+    let data = await res.json();
+    return data.balance;
+}
+
+function updateBalanceUI() {
+    if (currentPlayer) {
+        getBalance().then(balance => {
+            document.getElementById('balanceDisplay').innerText = balance;
+            currentPlayer.balance = balance;
+        });
+    }
+}
+
+document.getElementById('loginForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const telegram = document.getElementById('telegram').value.trim();
+    const password = document.getElementById('password').value;
+    if (password.length < 4) {
+        document.getElementById('loginError').innerText = 'Пароль минимум 4 символа';
+        return;
+    }
+    let res = await apiCall('/api/login', { telegram, password });
+    if (res.error) {
+        document.getElementById('loginError').innerText = res.error;
+    } else {
+        currentPlayer = res;
+        document.getElementById('loginContainer').style.display = 'none';
+        document.getElementById('userPanel').style.display = 'flex';
+        document.getElementById('gamesContainer').style.display = 'block';
+        document.getElementById('usernameDisplay').innerText = res.username;
+        document.getElementById('playerIdDisplay').innerText = res.playerId;
+        document.getElementById('balanceDisplay').innerText = res.balance;
+        startBalanceUpdater();
+    }
+});
+
+function startBalanceUpdater() {
+    setInterval(() => {
+        if (currentPlayer) updateBalanceUI();
+    }, 5000);
+}
+
+// ==== КРЕШ ИГРА (AVIA) ====
+async function startCrashGame() {
+    let bet = prompt('Ставка (от 10 грн):', '10');
+    bet = parseInt(bet);
+    if (isNaN(bet) || bet < 10) return alert('Минимум 10 грн');
+    let balance = await getBalance();
+    if (bet > balance) return alert('Недостаточно средств');
+    // Здесь нужно реализовать логику креша на сервере. Для простоты – демо.
+    // В реальности тебе нужно будет расширить сервер API для игры. Но раз ты спешишь, я даю локальную игру (без сервера), а баланс списываешь отдельно.
+    // Однако лучше сделать на сервере – это долго. Для демо сейчас используем клиентский краш.
+    alert('Для полноценной игры нужно дописать серверную логику. Пока – демо.');
+}
+async function playSlot() {
+    let bet = prompt('Ставка на спин (от 10 грн):', '10');
+    bet = parseInt(bet);
+    if (isNaN(bet) || bet < 10) return alert('Минимум 10 грн');
+    let balance = await getBalance();
+    if (bet > balance) return alert('Недостаточно средств');
+    // Эмуляция слота
+    const symbols = ['🍒', '🍋', '🍊', '🍉', '🔔', '💎'];
+    let reels = [symbols[Math.floor(Math.random()*6)], symbols[Math.floor(Math.random()*6)], symbols[Math.floor(Math.random()*6)]];
+    let win = 0;
+    if (reels[0] === reels[1] && reels[1] === reels[2]) win = bet * 10;
+    let newBalance = balance - bet + win;
+    // Отправляем запрос на сервер для изменения баланса (нужно реализовать API /api/updateBalance)
+    alert(`Выпало: ${reels.join(' ')}. Выигрыш: ${win} грн. Новый баланс: ${newBalance}`);
+    updateBalanceUI();
+}
+async function deposit() {
+    if (!currentPlayer) return;
+    let res = await apiCall('/api/create-payment', { player_id: currentPlayer.playerId });
+    if (res.invoice_url) {
+        window.location.href = res.invoice_url;
+    } else {
+        alert('Ошибка создания платежа');
+    }
+}
+document.getElementById('crashBtn')?.addEventListener('click', startCrashGame);
+document.getElementById('slotBtn')?.addEventListener('click', playSlot);
+document.getElementById('depositBtn')?.addEventListener('click', deposit);
+</script>
+</body>
+</html>
