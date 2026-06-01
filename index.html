@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BLACK VAIL | AVIA & SLOT</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Segoe UI', system-ui, sans-serif;
+        }
+        body {
+            background: #000;
+            color: #eee;
+            overflow-x: hidden;
+        }
+        .bg {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: radial-gradient(circle at 30% 20%, #1a0000, #000);
+            z-index: -2;
+        }
+        .container {
+            max-width: 1300px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            background: rgba(0,0,0,0.7);
+            border-radius: 60px;
+            padding: 10px 30px;
+            margin-bottom: 30px;
+            border: 1px solid #f44;
+        }
+        .avatar {
+            width: 70px;
+            border-radius: 50%;
+            border: 2px solid gold;
+        }
+        h1 {
+            font-size: 2.5rem;
+            background: linear-gradient(135deg,#ff2a2a,#ffcc00);
+            -webkit-background-clip: text;
+            background-clip: text;
+            color: transparent;
+        }
+        .user-panel {
+            background: #111;
+            padding: 10px 20px;
+            border-radius: 40px;
+            display: flex;
+            gap: 20px;
+            border: 1px solid #fc0;
+            flex-wrap: wrap;
+        }
+        .game-btn {
+            background: #8b0000;
+            color: #ffcc00;
+            padding: 12px 24px;
+            font-size: 1.2rem;
+            border-radius: 50px;
+            cursor: pointer;
+            border: none;
+            margin: 8px;
+            transition: 0.2s;
+            font-weight: bold;
+        }
+        .game-btn:hover {
+            background: #c20000;
+            transform: scale(0.97);
+        }
+        .login-box {
+            background: #111;
+            padding: 40px;
+            border-radius: 30px;
+            border: 2px solid #f44;
+            max-width: 400px;
+            margin: 100px auto;
+        }
+        .login-box input {
+            width: 100%;
+            padding: 12px;
+            margin: 10px 0;
+            border-radius: 40px;
+            border: none;
+            background: #222;
+            color: #fc0;
+            border: 1px solid #f44;
+        }
+        .login-box button {
+            width: 100%;
+            padding: 12px;
+            background: #f44;
+            color: black;
+            font-weight: bold;
+            border: none;
+            border-radius: 40px;
+            cursor: pointer;
+        }
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.95);
+            z-index: 1000;
+            justify-content: center;
+            align-items: center;
+        }
+        .modal-content {
+            background: #1a0000;
+            border: 3px solid #f00;
+            border-radius: 30px;
+            width: 90%;
+            max-width: 700px;
+            padding: 20px;
+            text-align: center;
+        }
+        .close {
+            float: right;
+            font-size: 30px;
+            cursor: pointer;
+            color: #f44;
+        }
+        #multiplier {
+            font-size: 4rem;
+            color: #0f0;
+            margin: 20px 0;
+        }
+        .slot-reels {
+            font-size: 3rem;
+            letter-spacing: 20px;
+            margin: 20px 0;
+        }
+        .error {
+            color: #ff6666;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+<div class="bg"></div>
+<div class="container">
+    <div class="header">
+        <img src="https://cdn-icons-png.flaticon.com/512/271/271284.png" class="avatar" alt="joker">
+        <h1>BLACK VAIL</h1>
+        <div class="user-panel" id="userPanel" style="display: none;">
+            <span>👤 <strong id="usernameDisplay"></strong></span>
+            <span>🆔 <strong id="playerIdDisplay"></strong></span>
+            <span>💰 <span id="balanceDisplay">0</span> грн</span>
+        </div>
+    </div>
+    <div id="loginContainer" class="login-box">
+        <h2>Вход / Регистрация</h2>
+        <input type="text" id="telegram" placeholder="Telegram @username">
+        <input type="password" id="password" placeholder="Пароль (мин 4)">
+        <button id="loginBtn">Войти</button>
+        <div id="loginError" class="error"></div>
+    </div>
+    <div id="gamesContainer" style="display: none; text-align: center;">
+        <button class="game-btn" id="crashBtn">✈️ АВИАТОР (CRASH)</button>
+        <button class="game-btn" id="slotBtn">🎰 СЛОТ</button>
+        <button class="game-btn" id="depositBtn">💳 ПОПОЛНИТЬ 500 грн</button>
+        <a href="https://blackvail-backend.onrender.com/admin" target="_blank" style="display: inline-block; margin-top: 10px; color: #fc0;">👑 Админ-панель</a>
+    </div>
+</div>
+
+<div id="gameModal" class="modal">
+    <div class="modal-content">
+        <span class="close">&times;</span>
+        <div id="gameModalContent"></div>
+    </div>
+</div>
+
+<script>
+    // === НАСТРОЙКИ (укажи свой бэкенд после деплоя) ===
+    const BACKEND_URL = 'https://blackvail-backend.onrender.com'; // <-- замени на свой URL из Render
+    let currentUser = null;
+
+    async function apiCall(endpoint, data = {}) {
+        try {
+            const res = await fetch(BACKEND_URL + endpoint, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            });
+            return await res.json();
+        } catch(e) {
+            console.error(e);
+            return { error: 'Ошибка соединения с сервером' };
+        }
+    }
+
+    async function fetchBalance() {
+        if (!currentUser) return 0;
+        const res = await fetch(`${BACKEND_URL}/api/balance/${currentUser.playerId}`);
+        const data = await res.json();
+        return data.balance || 0;
+    }
+
+    async function updateBalanceUI() {
+        if (currentUser) {
+            const bal = await fetchBalance();
+            document.getElementById('balanceDisplay').innerText = bal;
+            currentUser.balance = bal;
+        }
+    }
+
+    document.getElementById('loginBtn').onclick = async () => {
+        const telegram = document.getElementById('telegram').value.trim();
+        const password = document.getElementById('password').value;
+        if (password.length < 4) {
+            document.getElementById('loginError').innerText = 'Пароль минимум 4 символа';
+            return;
+        }
+        const res = await apiCall('/api/login', { telegram, password });
+        if (res.error) {
+            document.getElementById('loginError').innerText = res.error;
+        } else {
+            currentUser = {
+                playerId: res.playerId,
+                username: res.username,
+                balance: res.balance
+            };
+            document.getElementById('loginContainer').style.display = 'none';
+            document.getElementById('userPanel').style.display = 'flex';
+            document.getElementById('gamesContainer').style.display = 'block';
+            document.getElementById('usernameDisplay').innerText = res.username;
+            document.getElementById('playerIdDisplay').innerText = res.playerId;
+            document.getElementById('balanceDisplay').innerText = res.balance;
+            setInterval(updateBalanceUI, 5000);
+        }
+    };
+
+    // ========== КРЕШ ИГРА ==========
+    let crashActive = false;
+    let crashLoop = null;
+    let currentBet = 0;
+    let currentMultiplier = 1;
+    let crashPoint = 0;
+
+    async function startCrashGame() {
+        if (!currentUser) return;
+        let bet = parseInt(prompt('Ставка (от 10 грн):', '10'));
+        if (isNaN(bet) || bet < 10) return alert('Минимум 10 грн');
+        const balance = await fetchBalance();
+        if (bet > balance) return alert('Недостаточно средств');
+        const betRes = await apiCall('/api/place_bet', { player_id: currentUser.playerId, bet, game: 'crash' });
+        if (betRes.error) return alert(betRes.error);
+        currentBet = bet;
+        crashActive = true;
+        currentMultiplier = 1.0;
+        // генерируем точку краха на сервере было бы правильно, но для простоты – на клиенте (честно только с бэкендом)
+        let r = Math.random() * 100;
+        if (r <= 80) crashPoint = 1 + Math.random() * 0.8;
+        else if (r <= 95) crashPoint = 1.8 + Math.random() * 1.2;
+        else crashPoint = 3 + Math.random() * 27;
+        crashPoint = Math.round(crashPoint * 100) / 100;
+        const modal = document.getElementById('gameModal');
+        const modalContent = document.getElementById('gameModalContent');
+        modalContent.innerHTML = `
+            <h2>✈️ АВИАТОР (CRASH)</h2>
+            <div id="multiplier" style="font-size:4rem;">1.00x</div>
+            <button id="cashoutBtn" style="padding:10px 20px; background:#fc0; border:none; border-radius:40px;">ЗАБРАТЬ ВЫИГРЫШ</button>
+            <div id="crashStatus"></div>
+            <div>Крах при x${crashPoint}</div>
+        `;
+        modal.style.display = 'flex';
+        if (crashLoop) clearInterval(crashLoop);
+        crashLoop = setInterval(() => {
+            if (!crashActive) return;
+            currentMultiplier += 0.03;
+            currentMultiplier = Math.round(currentMultiplier * 100) / 100;
+            document.getElementById('multiplier').innerHTML = currentMultiplier.toFixed(2) + 'x';
+            if (currentMultiplier >= crashPoint) {
+                clearInterval(crashLoop);
+                crashActive = false;
+                document.getElementById('multiplier').innerHTML = currentMultiplier.toFixed(2) + 'x (КРАХ!)';
+                document.getElementById('crashStatus').innerHTML = '💥 СТАВКА ПРОИГРАНА';
+                document.getElementById('cashoutBtn').disabled = true;
+                updateBalanceUI();
+            }
+        }, 100);
+        document.getElementById('cashoutBtn').onclick = async () => {
+            if (!crashActive) return;
+            clearInterval(crashLoop);
+            crashActive = false;
+            let win = Math.round(currentBet * currentMultiplier);
+            const cashRes = await apiCall('/api/cashout_crash', { player_id: currentUser.playerId, win, multiplier: currentMultiplier });
+            if (cashRes.success) {
+                document.getElementById('multiplier').innerHTML = currentMultiplier.toFixed(2) + 'x';
+                document.getElementById('crashStatus').innerHTML = `✅ ВЫИГРЫШ: ${win} грн!`;
+                document.getElementById('cashoutBtn').disabled = true;
+                updateBalanceUI();
+            } else {
+                alert('Ошибка вывода');
+            }
+        };
+    }
+
+    async function playSlot() {
+        if (!currentUser) return;
+        let bet = parseInt(prompt('Ставка (от 10 грн):', '10'));
+        if (isNaN(bet) || bet < 10) return alert('Минимум 10 грн');
+        const balance = await fetchBalance();
+        if (bet > balance) return alert('Недостаточно средств');
+        const betRes = await apiCall('/api/place_bet', { player_id: currentUser.playerId, bet, game: 'slot' });
+        if (betRes.error) return alert(betRes.error);
+        const symbols = ['🍒', '🍋', '🍊', '🍉', '🔔', '💎'];
+        let reels = [
+            symbols[Math.floor(Math.random() * 6)],
+            symbols[Math.floor(Math.random() * 6)],
+            symbols[Math.floor(Math.random() * 6)]
+        ];
+        let win = 0;
+        if (reels[0] === reels[1] && reels[1] === reels[2]) win = bet * 10;
+        if (win > 0) {
+            const cashRes = await apiCall('/api/cashout_slot', { player_id: currentUser.playerId, win });
+            if (cashRes.success) {
+                alert(`🎰 ${reels.join(' ')} 🎰\n✅ ВЫИГРЫШ: ${win} грн!`);
+            } else alert('Ошибка зачисления выигрыша');
+        } else {
+            alert(`🎰 ${reels.join(' ')} 🎰\n❌ ПРОИГРЫШ -${bet} грн`);
+        }
+        updateBalanceUI();
+    }
+
+    async function deposit() {
+        if (!currentUser) return;
+        const res = await apiCall('/api/create-payment', { player_id: currentUser.playerId });
+        if (res.invoice_url) {
+            window.location.href = res.invoice_url;
+        } else {
+            alert('Ошибка создания платежа: ' + (res.error || 'неизвестно'));
+        }
+    }
+
+    document.getElementById('crashBtn').onclick = startCrashGame;
+    document.getElementById('slotBtn').onclick = playSlot;
+    document.getElementById('depositBtn').onclick = deposit;
+
+    document.querySelector('.close').onclick = () => {
+        document.getElementById('gameModal').style.display = 'none';
+        if (crashLoop) clearInterval(crashLoop);
+        crashActive = false;
+    };
+    window.onclick = (e) => {
+        let modal = document.getElementById('gameModal');
+        if (e.target === modal) {
+            modal.style.display = 'none';
+            if (crashLoop) clearInterval(crashLoop);
+            crashActive = false;
+        }
+    };
+</script>
+</body>
+</html>
